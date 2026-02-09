@@ -10,7 +10,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-skufobot_db}
     volumes:
       - postgres_data_prod:/var/lib/postgresql/data
-      - ./init_tables.sql:/docker-entrypoint-initdb.d/01_init.sql
+      - ./init_tables.sql:/docker-entrypoint-initdb.d/init_tables.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-skufobot_db}"]
       interval: 10s
@@ -53,20 +53,9 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # --- Мониторинг (опционально) ---
-  monitor:
-    image: redis:7-alpine
-    container_name: skuf-redis
-    restart: unless-stopped
-    networks:
-      - skufobot-network
-    volumes:
-      - redis_data:/data
-
 volumes:
   postgres_data_prod:
   skufobot_logs:
-  redis_data:
 
 networks:
   skufobot-network:

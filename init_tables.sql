@@ -3,6 +3,7 @@
 
 -- Таблица подписчиков (аналог chat_subscriber)
 CREATE TABLE IF NOT EXISTS chat_subscriber (
+    chat_id BIGINT PRIMARY KEY,
     registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

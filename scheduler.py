@@ -6,19 +6,18 @@
 import asyncio
 import logging
 import time
-from datetime import datetime
-import aioschedule as schedule
-from telegram.error import BadRequest
+from datetime import datetime, time as dt_time
+from typing import Callable
 
 from config import settings
 from services import subscriber_service, gif_service
 from telegram_utils import send_text_message, send_gif_message
+from telegram.error import BadRequest
 
 logger = logging.getLogger(__name__)
 
-
 class SimpleScheduler:
-    """Упрощенный планировщик задач с использованием aioschedule"""
+    """Упрощенный планировщик задач с использованием asyncio"""
 
     def __init__(self, bot_instance):
         self.bot = bot_instance
@@ -27,6 +26,7 @@ class SimpleScheduler:
         self.debug_mode = settings.debug  # Сохраняем режим отладки
         self.last_gif_sent_time = {}  # Кэш времени отправки гифок по chat_id
         self.request_delay = settings.scheduler_min_interval    # Минимальная задержка между запросами (сек)
+        self._scheduled_tasks = []
 
     def _get_today_day_of_week(self) -> int:
         """Возвращает номер дня недели (1=понедельник, 7=воскресенье)"""
@@ -44,6 +44,32 @@ class SimpleScheduler:
             7: "Воскресенье"
         }
         return days.get(day, f"День {day}")
+
+    async def send_daily_text_message(self):
+        """Ежедневная рассылка текстовых сообщений в 8:30 утра"""
+        try:
+            logger.info("🚀 Начинаю ежедневную текстовую рассылку...")
+
+            chat_ids = await subscriber_service.get_all_subscriber_ids()
+            message = "Доброе утро! Хорошего дня! 🎉"
+
+            sent_count = 0
+            failed_count = 0
+
+            for chat_id in chat_ids:
+                try:
+                    await send_text_message(self.bot, chat_id, message)
+                    sent_count += 1
+                    logger.debug(f"📨 Сообщение отправлено в чат {chat_id}")
+                except Exception as e:
+                    failed_count += 1
+                    logger.error(f"❌ Ошибка отправки в чат {chat_id}: {e}")
+
+            logger.info(f"✅ Ежедневная текстовая рассылка завершена. "
+                        f"Успешно: {sent_count}, Ошибок: {failed_count}")
+
+        except Exception as e:
+            logger.error(f"❌ Ошибка в ежедневной текстовой рассылке: {e}")
 
     async def send_daily_gif_message(self):
         """Ежедневная рассылка GIF в 8:30 утра"""
@@ -69,6 +95,12 @@ class SimpleScheduler:
 
                     sent_count += 1
                     logger.debug(f"🎬 GIF отправлен в чат {chat_id}")
+                except BadRequest as e:
+                    if "Chat not found" in str(e) or "chat not found" in str(e).lower():
+                        logger.error(f"❌ Чат {chat_id} не найден")
+                    else:
+                        logger.error(f"❌ Ошибка запроса при отправке в чат {chat_id}: {e}")
+                    failed_count += 1
                 except Exception as e:
                     failed_count += 1
                     logger.error(f"❌ Ошибка отправки в чат {chat_id}: {e}")
@@ -124,34 +156,52 @@ class SimpleScheduler:
                                         f"[Тест {day_name}] Нет гифок для этого дня\n"
                                         f"Время: {datetime.now().strftime('%H:%M:%S')}")
 
-        # scheduler.py - исправьте блок try-except в функции send_test_short_interval_message
-        except BadRequest as e:
-            if "Chat not found" in str(e) or "chat not found" in str(e).lower():
-                logger.error(f"❌ Чат {chat_id} не найден")
-                # Удаляем из кэша
-                if chat_id in self.last_gif_sent_time:
-                    del self.last_gif_sent_time[chat_id]
-            else:
-                logger.error(f"❌ Ошибка запроса при отправке тестового GIF в чат {chat_id}: {e}")
+        except Exception as e:
+            logger.error(f"❌ Ошибка в тестовой задаче: {e}")
+            # При ошибке увеличиваем задержку
+            self.request_delay = min(self.request_delay + 5, 60)
 
     def schedule_daily_tasks(self):
         """Планирует ежедневные задачи"""
 
-        # Ежедневная GIF рассылка в 8:30
-        schedule.every().day.at("08:31").do(
-            lambda: asyncio.create_task(self.send_daily_gif_message())
-        )
+        daily_gif_task = asyncio.create_task(self._schedule_daily_task(
+            dt_time(8, 31), self.send_daily_gif_message, "Ежедневная GIF рассылка в 8:30"
+        ))
+
+        self._scheduled_tasks.extend([daily_gif_task])
 
         logger.info("📅 Запланированы ежедневные задачи на 8:30")
 
-        # В debug-режиме добавляем тестовые задачи с короткими интервалами
-        if self.debug_mode:
-            # Тестовая задача каждые 30 секунд (вместо 5)
-            schedule.every(settings.scheduler_debug_interval).seconds.do(
-                lambda: asyncio.create_task(self.send_test_short_interval_message())
-            )
+    async def _schedule_daily_task(self, target_time: dt_time, coro_func: Callable, description: str):
+        """Планирует задачу на определенное время каждый день"""
+        logger.info(f"⏰ Запланирована задача: {description}")
 
-            logger.info("🔧 Включен debug-режим: добавлены тестовые задачи")
+        while self.is_running:
+            now = datetime.now()
+            target_datetime = datetime.combine(now.date(), target_time)
+
+            # Если время уже прошло сегодня, планируем на завтра
+            if target_datetime < now:
+                target_datetime = datetime.combine(
+                    now.date() + timedelta(days=1),
+                    target_time
+                )
+
+            # Вычисляем время ожидания
+            wait_seconds = (target_datetime - now).total_seconds()
+
+            if wait_seconds > 0:
+                logger.info(f"⏰ Задача '{description}' запланирована на {target_datetime.strftime('%H:%M')} (через {wait_seconds/60:.1f} минут)")
+                await asyncio.sleep(wait_seconds)
+
+            # Выполняем задачу
+            try:
+                await coro_func()
+            except Exception as e:
+                logger.error(f"❌ Ошибка выполнения задачи '{description}': {e}")
+
+            # Ждем до следующего дня
+            await asyncio.sleep(60)  # Небольшая задержка перед планированием следующего дня
 
     async def send_test_minute_interval_message(self):
         """Тестовая задача с минутным интервалом"""
@@ -182,59 +232,50 @@ class SimpleScheduler:
             logger.error(f"❌ Ошибка в минутной задаче: {e}")
 
     async def run_pending_tasks(self):
-        """Запускает запланированные задачи"""
+        """Запускает запланированные задачи (для совместимости)"""
+        # В этой версии мы не используем aioschedule
         while self.is_running:
-            try:
-                # Запускаем все задачи, которые должны быть выполнены
-                await schedule.run_pending()
-
-                # В debug-режиме логируем оставшиеся задачи
-                if self.debug_mode and schedule.jobs:
-                    logger.debug(f"🔍 Активных задач в очереди: {len(schedule.jobs)}")
-
-            except Exception as e:
-                logger.error(f"❌ Ошибка в run_pending: {e}")
-
-            # Ждем 1 секунду перед следующей проверкой
             await asyncio.sleep(1)
 
     async def start(self):
         """Запускает планировщик"""
         if not self.is_running:
             self.is_running = True
+
+            # Планируем ежедневные задачи
             self.schedule_daily_tasks()
 
-            # Запускаем фоновую задачу для проверки расписания
-            asyncio.create_task(self.run_pending_tasks())
-            logger.info("🚀 Упрощенный планировщик запущен")
-
-            # Показываем запланированные задачи
-            jobs = schedule.jobs
-            logger.info(f"📋 Запланировано задач: {len(jobs)}")
-            for i, job in enumerate(jobs, 1):
-                logger.info(f"  {i:2d}. {job}")
-
-            # Логируем расписание для debug-режима
+            # В debug-режиме добавляем тестовые задачи
             if self.debug_mode:
-                self.log_schedule_details()
-        else:
-            logger.warning("⚠️ Планировщик уже запущен")
+                debug_task = asyncio.create_task(self._run_debug_tasks())
+                self._scheduled_tasks.append(debug_task)
+                logger.info("🔧 Включен debug-режим: добавлены тестовые задачи")
 
-    def log_schedule_details(self):
-        """Логирует детали расписания (только в debug)"""
-        logger.debug("🔍 Детали расписания планировщика:")
-        for i, job in enumerate(schedule.jobs, 1):
-            logger.debug(f"  Задача {i}:")
-            logger.debug(f"    - Функция: {job.job_func}")
-            logger.debug(f"    - Интервал: {job.interval} {job.unit}")
-            logger.debug(f"    - Следующий запуск: {job.next_run}")
-            logger.debug(f"    - Последний запуск: {job.last_run}")
+            logger.info("🚀 Планировщик запущен")
+
+    async def _run_debug_tasks(self):
+        """Запускает тестовые задачи в debug-режиме"""
+        while self.is_running and self.debug_mode:
+            try:
+                # Тестовая задача каждые 30 секунд
+                await self.send_test_short_interval_message()
+                await asyncio.sleep(30)
+
+                # Тестовая задача каждые 2 минуты
+                await self.send_daily_gif_message()
+                await asyncio.sleep(120)  # 2 минуты
+
+            except Exception as e:
+                logger.error(f"❌ Ошибка в отладочных задачах: {e}")
+                await asyncio.sleep(30)
 
     def stop(self):
         """Останавливает планировщик"""
         self.is_running = False
-        schedule.clear()
-        logger.info("🛑 Упрощенный планировщик остановлен")
+        for task in self._scheduled_tasks:
+            task.cancel()
+        self._scheduled_tasks.clear()
+        logger.info("🛑 Планировщик остановлен")
 
     async def send_test_gif(self, chat_id: int, day: int):
         """Отправляет тестовый GIF в указанный чат"""
@@ -261,28 +302,14 @@ class SimpleScheduler:
         if interval_seconds <= 0:
             raise ValueError("Интервал должен быть положительным числом")
 
-        # Преобразуем секунды в соответствующую единицу
-        if interval_seconds >= 86400:  # больше или равно дню
-            days = interval_seconds // 86400
-            schedule.every(days).days.do(lambda: asyncio.create_task(callback()))
-        elif interval_seconds >= 3600:  # больше или равно часу
-            hours = interval_seconds // 3600
-            schedule.every(hours).hours.do(lambda: asyncio.create_task(callback()))
-        elif interval_seconds >= 60:  # больше или равно минуте
-            minutes = interval_seconds // 60
-            schedule.every(minutes).minutes.do(lambda: asyncio.create_task(callback()))
-        else:
-            schedule.every(interval_seconds).seconds.do(lambda: asyncio.create_task(callback()))
+        async def wrapped_task():
+            while self.is_running:
+                await callback()
+                await asyncio.sleep(interval_seconds)
 
+        task = asyncio.create_task(wrapped_task())
+        self._scheduled_tasks.append(task)
         logger.info(f"➕ Добавлена пользовательская задача с интервалом {interval_seconds} сек")
 
-
-async def test_scheduler(bot_instance):
-    """Тестирование планировщика"""
-    scheduler = SimpleScheduler(bot_instance)
-    await scheduler.start()
-
-    # Тест: немедленная отправка
-    await scheduler.send_daily_gif_message()
-
-    return scheduler
+# Добавьте импорт timedelta в начало файла
+from datetime import timedelta
