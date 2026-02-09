@@ -1,0 +1,42 @@
+# Stage 1: Builder
+FROM python:3.11-slim AS builder
+
+WORKDIR /app
+
+# Копируем зависимости
+COPY requirements.txt .
+
+# Устанавливаем зависимости
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Stage 2: Runtime
+FROM python:3.11-slim
+
+# Устанавливаем системные зависимости
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Копируем Python зависимости из builder
+COPY --from=builder /root/.local /root/.local
+
+# Копируем исходный код
+COPY . .
+
+# Создаем папку для логов
+RUN mkdir -p /app/logs
+
+# Добавляем Python в PATH
+ENV PATH=/root/.local/bin:$PATH
+ENV PYTHONPATH=/app
+
+# Создаем не-root пользователя
+RUN useradd -m -u 1000 botuser && \
+    chown -R botuser:botuser /app
+
+USER botuser
+
+# Команда запуска
+CMD ["python", "run.py"]

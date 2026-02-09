@@ -1,0 +1,30 @@
+# Основные зависимости
+python-telegram-bot==22.6
+python-dotenv==1.2.1
+asyncpg==0.31.0
+
+# Для планировщика (упрощенная версия)
+aioschedule==0.5.2
+
+# Для планировщика
+apscheduler==3.11.2
+sqlalchemy==2.0.46
+
+psycopg2-binary==2.9.11
+
+# Для разработки
+alembic==1.18.3
+pydantic==2.12.5
+pydantic-settings==2.12.0
+python-dateutil==2.9.0
+
+# Утилиты
+aiohttp==3.13.3
+asyncio==4.0.0
+nest-asyncio==1.6.0
+
+# Логирование
+colorlog==6.10.1
+
+# Для работы с датами в планировщике
+pytz==2025.2

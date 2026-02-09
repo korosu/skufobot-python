@@ -1,0 +1,68 @@
+services:
+  # --- База данных ---
+  db:
+    image: postgres:15-alpine
+    container_name: skuf-postgres-python
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-skufobot_db}
+    ports:
+      - "5433:5432"  # Изменяем порт, чтобы не конфликтовать с Java версией
+    volumes:
+      - postgres_data_python:/var/lib/postgresql/data
+      - ./init_tables.sql:/docker-entrypoint-initdb.d/01_init_tables.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-skufobot_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # --- PgAdmin ---
+  pgadmin:
+    image: dpage/pgadmin4:9
+    container_name: skuf-pgadmin-python
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - pgadmin_data_python:/var/lib/pgadmin
+
+  # --- Python приложение ---
+  app:
+    build: .
+    container_name: skuf-bot-python
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8081:8080"  # Изменяем порт
+    environment:
+      # Telegram
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME}
+      # Database
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-skufobot_db}
+      POSTGRES_HOST: db  # Имя сервиса в Docker
+      POSTGRES_PORT: 5432
+      # App
+      DEBUG: ${DEBUG:-True}
+      TIMEZONE: ${TIMEZONE:-Europe/Moscow}
+    volumes:
+      - ./:/app  # Монтируем код для разработки
+    stdin_open: true
+    tty: true
+
+volumes:
+  postgres_data_python:
+  pgadmin_data_python:

@@ -1,0 +1,73 @@
+services:
+  # --- База данных ---
+  db:
+    image: postgres:15-alpine
+    container_name: skuf-postgres-prod
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-skufobot_db}
+    volumes:
+      - postgres_data_prod:/var/lib/postgresql/data
+      - ./init_tables.sql:/docker-entrypoint-initdb.d/01_init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-skufobot_db}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - skufobot-network
+
+  # --- Приложение Python ---
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: skuf-bot-prod
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Telegram
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_BOT_USERNAME: ${TELEGRAM_BOT_USERNAME}
+      # Database
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-skufobot_db}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      # App
+      DEBUG: ${DEBUG:-False}
+      TIMEZONE: ${TIMEZONE:-Europe/Moscow}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - skufobot_logs:/app/logs
+    networks:
+      - skufobot-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # --- Мониторинг (опционально) ---
+  monitor:
+    image: redis:7-alpine
+    container_name: skuf-redis
+    restart: unless-stopped
+    networks:
+      - skufobot-network
+    volumes:
+      - redis_data:/data
+
+volumes:
+  postgres_data_prod:
+  skufobot_logs:
+  redis_data:
+
+networks:
+  skufobot-network:
+    driver: bridge
