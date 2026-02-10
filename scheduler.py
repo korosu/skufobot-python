@@ -77,7 +77,7 @@ class SimpleScheduler:
             logger.info("🚀 Начинаю ежедневную GIF рассылку...")
 
             today = self._get_today_day_of_week()
-            day_name = self._get_day_name(today)
+            day_name_genitive = self._get_day_name_genitive(today)  # Изменено на родительный падеж
             chat_ids = await subscriber_service.get_all_subscriber_ids()
 
             # Ищем случайный GIF для сегодняшнего дня
@@ -89,7 +89,7 @@ class SimpleScheduler:
             for chat_id in chat_ids:
                 try:
                     if gif:
-                        await send_gif_message(self.bot, chat_id, gif.file_id, f"Хорошего {day_name}! 😊")
+                        await send_gif_message(self.bot, chat_id, gif.file_id, f"Хорошего {day_name_genitive}! 😊")
                     else:
                         await send_text_message(self.bot, chat_id, "😔 Гифки на сегодня закончились")
 
@@ -165,12 +165,12 @@ class SimpleScheduler:
         """Планирует ежедневные задачи"""
 
         daily_gif_task = asyncio.create_task(self._schedule_daily_task(
-            dt_time(8, 31), self.send_daily_gif_message, "Ежедневная GIF рассылка в 8:30"
+            dt_time(5, 30), self.send_daily_gif_message, "Ежедневная GIF рассылка в 8:30 по UTC+3"
         ))
 
         self._scheduled_tasks.extend([daily_gif_task])
 
-        logger.info("📅 Запланированы ежедневные задачи на 8:30")
+        logger.info("📅 Запланированы ежедневные задачи на 8:30 по UTC+3")
 
     async def _schedule_daily_task(self, target_time: dt_time, coro_func: Callable, description: str):
         """Планирует задачу на определенное время каждый день"""
@@ -296,6 +296,28 @@ class SimpleScheduler:
             logger.error(f"❌ Ошибка отправки тестового GIF в чат {chat_id}: {e}")
             await send_text_message(self.bot, chat_id, "❌ Произошла ошибка при отправке теста")
             return False
+
+    def _get_day_name_genitive(self, day_num: int) -> str:
+        """
+        Возвращает название дня недели в родительном падеже
+        (для фраз типа "Хорошего понедельника!")
+
+        Args:
+            day_num: номер дня недели (0-6)
+
+        Returns:
+            str: день недели в родительном падеже
+        """
+        day_names_genitive = {
+            0: "понедельника",
+            1: "вторника",
+            2: "среды",
+            3: "четверга",
+            4: "пятницы",
+            5: "субботы",
+            6: "воскресенья"
+        }
+        return day_names_genitive.get(day_num, "дня")
 
     def add_custom_task(self, interval_seconds: int, callback):
         """Добавляет пользовательскую задачу с заданным интервалом"""
