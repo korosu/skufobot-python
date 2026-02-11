@@ -3,7 +3,7 @@
 """
 
 import logging
-import asyncio  # [cite: 1] Добавляем asyncio для управления ожиданием
+import asyncio
 from datetime import datetime
 from typing import Dict, Optional
 from telegram import Update
@@ -17,9 +17,9 @@ from telegram.ext import (
 )
 
 from config import settings
-from repositories import db_connection
+from database import db
 from services import subscriber_service, gif_service
-from telegram_utils import send_text_message
+from telegram_utils import send_text
 from scheduler import SimpleScheduler
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class SkufBot:
             logger.info("🤖 Инициализация SkufBot...")
 
             # 👇 2. открываем постоянное соединение для работы бота
-            await db_connection.connect()
+            await db.connect()
             logger.info("✅ Подключение к базе данных установлено")
 
             # 3. Создаем приложение Telegram
@@ -129,31 +129,31 @@ class SkufBot:
             message = "🎉 Добро пожаловать! Чат зарегистрирован." if is_new else "ℹ️ Чат уже зарегистрирован."
             if is_new:
                 logger.info(f"✅ Новый чат зарегистрирован: {chat_id}")
-            await send_text_message(self.application.bot, chat_id, message)
+            await send_text(self.application.bot, chat_id, message)
         except Exception as e:
             logger.error(f"❌ Ошибка /start для чата {chat_id}: {e}")
-            await send_text_message(self.application.bot, chat_id, "❌ Произошла ошибка при регистрации")
+            await send_text(self.application.bot, chat_id, "❌ Произошла ошибка при регистрации")
 
     async def handle_test(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /test"""
         chat_id = update.effective_chat.id
         try:
             if not context.args:
-                await send_text_message(self.application.bot, chat_id, "❌ Укажите день недели (1-7)\nПример: /test 1")
+                await send_text(self.application.bot, chat_id, "❌ Укажите день недели (1-7)\nПример: /test 1")
                 return
             try:
                 day = int(context.args[0])
                 if day < 1 or day > 7:
-                    await send_text_message(self.application.bot, chat_id, "❌ День недели должен быть от 1 до 7")
+                    await send_text(self.application.bot, chat_id, "❌ День недели должен быть от 1 до 7")
                     return
             except ValueError:
-                await send_text_message(self.application.bot, chat_id, "❌ День недели должен быть числом")
+                await send_text(self.application.bot, chat_id, "❌ День недели должен быть числом")
                 return
             if self.scheduler:
                 await self.scheduler.send_test_gif(chat_id, day)
         except Exception as e:
             logger.error(f"❌ Ошибка /test для чата {chat_id}: {e}")
-            await send_text_message(self.application.bot, chat_id, "❌ Произошла ошибка при тестировании")
+            await send_text(self.application.bot, chat_id, "❌ Произошла ошибка при тестировании")
 
     async def handle_day_command(self, update: Update, day: int):
         """Обработчик команд дней недели"""
@@ -163,29 +163,29 @@ class SkufBot:
             day_names = {1: "Понедельник", 2: "Вторник", 3: "Среда", 4: "Четверг", 5: "Пятница", 6: "Суббота", 7: "Воскресенье"}
             day_name = day_names.get(day, f"День {day}")
             message = f"📤 Режим загрузки установлен: {day_name}\nТеперь отправьте GIF для сохранения.\n/stop для отмены."
-            await send_text_message(self.application.bot, chat_id, message)
+            await send_text(self.application.bot, chat_id, message)
             logger.info(f"⚙️ Установлен режим загрузки для чата {chat_id}: день {day}")
         except Exception as e:
             logger.error(f"❌ Ошибка установки режима для чата {chat_id}: {e}")
-            await send_text_message(self.application.bot, chat_id, "❌ Произошла ошибка")
+            await send_text(self.application.bot, chat_id, "❌ Произошла ошибка")
 
     async def handle_gif(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик загрузки GIF"""
         chat_id = update.effective_chat.id
         try:
             if chat_id not in self.upload_modes:
-                await send_text_message(self.application.bot, chat_id, "❌ Сначала выберите день для загрузки (/monday, /tuesday и т.д.)")
+                await send_text(self.application.bot, chat_id, "❌ Сначала выберите день для загрузки (/monday, /tuesday и т.д.)")
                 return
             day = self.upload_modes[chat_id]
             file_id = update.message.animation.file_id
             await gif_service.save_gif(file_id, None, day)
             day_names = {1: "Понедельник", 2: "Вторник", 3: "Среда", 4: "Четверг", 5: "Пятница", 6: "Суббота", 7: "Воскресенье"}
             day_name = day_names.get(day, f"День {day}")
-            await send_text_message(self.application.bot, chat_id, f"✅ GIF сохранен для дня: {day_name}")
+            await send_text(self.application.bot, chat_id, f"✅ GIF сохранен для дня: {day_name}")
             logger.info(f"💾 GIF сохранен для чата {chat_id}: день {day}, file_id: {file_id}")
         except Exception as e:
             logger.error(f"❌ Ошибка сохранения GIF для чата {chat_id}: {e}")
-            await send_text_message(self.application.bot, chat_id, "❌ Ошибка при сохранении GIF")
+            await send_text(self.application.bot, chat_id, "❌ Ошибка при сохранении GIF")
 
     async def handle_stop(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /stop"""
@@ -193,13 +193,13 @@ class SkufBot:
         try:
             if chat_id in self.upload_modes:
                 del self.upload_modes[chat_id]
-                await send_text_message(self.application.bot, chat_id, "⏹️ Режим загрузки отключен")
+                await send_text(self.application.bot, chat_id, "⏹️ Режим загрузки отключен")
                 logger.info(f"⏹️ Режим загрузки отключен для чата {chat_id}")
             else:
-                await send_text_message(self.application.bot, chat_id, "ℹ️ Режим загрузки не активен")
+                await send_text(self.application.bot, chat_id, "ℹ️ Режим загрузки не активен")
         except Exception as e:
             logger.error(f"❌ Ошибка /stop для чата {chat_id}: {e}")
-            await send_text_message(self.application.bot, chat_id, "❌ Произошла ошибка")
+            await send_text(self.application.bot, chat_id, "❌ Произошла ошибка")
 
     async def handle_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /status"""
@@ -216,10 +216,10 @@ class SkufBot:
                 count = gif_counts[day]
                 message.append(f"{day_names[i]}: {count} GIF")
             message.extend(["", "⚙️ *Режим загрузки:* " + ("активен" if chat_id in self.upload_modes else "не активен"), "", "_Используйте /help для списка команд_"])
-            await send_text_message(self.application.bot, chat_id, "\n".join(message))
+            await send_text(self.application.bot, chat_id, "\n".join(message))
         except Exception as e:
             logger.error(f"❌ Ошибка /status для чата {chat_id}: {e}")
-            await send_text_message(self.application.bot, chat_id, "❌ Произошла ошибка при получении статуса")
+            await send_text(self.application.bot, chat_id, "❌ Произошла ошибка при получении статуса")
 
     async def handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /help"""
@@ -257,7 +257,7 @@ class SkufBot:
         [отправляете GIF]
         ✅ GIF сохранен для понедельника
         """
-        await send_text_message(self.application.bot, chat_id, help_text)
+        await send_text(self.application.bot, chat_id, help_text)
 
     async def handle_test_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /testschedule - тестирование планировщика"""
@@ -267,14 +267,14 @@ class SkufBot:
             # Добавляем тестовую задачу с интервалом 10 секунд
             async def test_task():
                 timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                await send_text_message(self.application.bot, chat_id,
+                await send_text(self.application.bot, chat_id,
                                         f"⏱️ Тестовая задача планировщика\n"
                                         f"Время: {timestamp}\n"
                                         f"ID чата: {chat_id}")
 
             self.scheduler.add_custom_task(10, test_task)
 
-            await send_text_message(self.application.bot, chat_id,
+            await send_text(self.application.bot, chat_id,
                                     f"✅ Добавлена тестовая задача!\n"
                                     f"• Интервал: 10 секунд\n"
                                     f"• Чат: {chat_id}\n"
@@ -285,7 +285,7 @@ class SkufBot:
 
         except Exception as e:
             logger.error(f"❌ Ошибка /testschedule для чата {chat_id}: {e}")
-            await send_text_message(self.application.bot, chat_id,
+            await send_text(self.application.bot, chat_id,
                                     "❌ Произошла ошибка при добавлении тестовой задачи")
 
     async def handle_stop_test_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -300,7 +300,7 @@ class SkufBot:
             # Перезапускаем планировщик
             await self.scheduler.start()
 
-            await send_text_message(self.application.bot, chat_id,
+            await send_text(self.application.bot, chat_id,
                                     "🛑 Все тестовые задачи остановлены\n"
                                     "✅ Планировщик перезапущен")
 
@@ -308,7 +308,7 @@ class SkufBot:
 
         except Exception as e:
             logger.error(f"❌ Ошибка /stoptestschedule для чата {chat_id}: {e}")
-            await send_text_message(self.application.bot, chat_id,
+            await send_text(self.application.bot, chat_id,
                                     "❌ Произошла ошибка при остановке тестовых задач")
 
     async def handle_unknown(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -317,7 +317,7 @@ class SkufBot:
             text = update.message.text
             if text.startswith('/'):
                 logger.info(f"❓ Неизвестная команда от {chat_id}: {text}")
-                await send_text_message(self.application.bot, chat_id, "❌ Неизвестная команда.")
+                await send_text(self.application.bot, chat_id, "❌ Неизвестная команда.")
 
     @staticmethod
     async def error_handler(update: Update, context: CallbackContext):
@@ -350,5 +350,5 @@ class SkufBot:
             logger.info("✅ Планировщик остановлен")
 
         # 3. Отключаемся от базы данных
-        await db_connection.disconnect()
+        await db.disconnect()
         logger.info("✅ Отключение от базы данных")

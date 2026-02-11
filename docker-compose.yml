@@ -60,6 +60,7 @@ services:
       TIMEZONE: ${TIMEZONE:-Europe/Moscow}
     volumes:
       - ./:/app  # Монтируем код для разработки
+    command: watchmedo auto-restart --directory=/app --pattern=*.py --recursive -- python run.py
     stdin_open: true
     tty: true
 

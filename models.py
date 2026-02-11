@@ -5,14 +5,15 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from http.cookiejar import UTC_ZONES
 from typing import Optional
+from config import settings
 
+import pytz
 
 @dataclass
 class ChatSubscriber:
     """
-    Модель подписчика чата (аналог Java класса ChatSubscriber)
+    Модель подписчика чата.
     Используем dataclass для автоматической генерации методов
     """
     chat_id: int
@@ -21,7 +22,7 @@ class ChatSubscriber:
     def __post_init__(self):
         """Инициализация после создания объекта"""
         if self.registered_at is None:
-            self.registered_at = datetime.utcnow()
+            self.registered_at = datetime.now(pytz.timezone(settings.timezone_moscow))
 
 
 @dataclass

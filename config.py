@@ -1,65 +1,63 @@
-import os
-from pydantic_settings import BaseSettings
-from dotenv import load_dotenv
-
-# Загружаем переменные окружения
-load_dotenv()
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import Optional
 
 class Settings(BaseSettings):
-    """Конфигурация приложения"""
+    """
+    Конфигурация приложения.
+    Pydantic автоматически считывает переменные из .env файла или системного окружения.
+    """
 
-    # Telegram Bot
-    telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    telegram_bot_username: str = os.getenv("TELEGRAM_BOT_USERNAME", "")
+    # --- Telegram Bot ---
+    # Не указываем значение по умолчанию -> поле обязательно.
+    # Если токена нет, приложение упадет с понятной ошибкой при запуске.
+    telegram_bot_token: str
+    telegram_bot_username: Optional[str] = None
 
-    # Database
-    postgres_user: str = os.getenv("POSTGRES_USER", "postgres")
-    postgres_password: str = os.getenv("POSTGRES_PASSWORD", "postgres")
-    postgres_db: str = os.getenv("POSTGRES_DB", "skufobot_db")
-    postgres_host: str = os.getenv("POSTGRES_HOST", "db")
-    postgres_port: int = int(os.getenv("POSTGRES_PORT", "5432"))
+    # --- Database ---
+    postgres_user: str = "postgres"
+    postgres_password: str = "postgres"
+    postgres_db: str = "skufobot_db"
+    postgres_host: str = "db"  # Хост 'db' для Docker compose, для локалки можно 'localhost'
+    postgres_port: int = 5432
 
-    # Таймауты для запросов (в секундах)
+    # --- Timeouts & Polling (Float для точности) ---
     tg_request_connect_timeout: float = 30.0
     tg_request_read_timeout: float = 10.0
     tg_request_write_timeout: float = 20.0
     tg_request_pool_timeout: float = 5.0
-    # Таймаут для long-polling (параметр timeout в run_polling)
-    tg_polling_timeout: int = 5
-    # Интервал между попытками опроса
-    tg_polling_interval: int = 1
 
-    # Database URL для SQLAlchemy
+    tg_polling_timeout: int = 5 # Long-polling обычно в int
+    tg_polling_interval: float = 1.0
+
+    # --- Application Settings ---
+    debug: bool = False
+    timezone_moscow: str = "Europe/Moscow"
+
+    # --- Scheduler Settings ---
+    scheduler_min_interval: int = 10
+    scheduler_debug_interval: int = 30
+
     @property
     def database_url(self) -> str:
-        return f"postgresql+asyncpg://{self.postgres_user}:{self.postgres_password}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+        """Сборка URL для SQLAlchemy / asyncpg"""
+        # Если пароль пустой, не добавляем двоеточие
+        auth = f"{self.postgres_user}:{self.postgres_password}" if self.postgres_password else self.postgres_user
+        return f"postgresql+asyncpg://{auth}@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
 
-    # Настройки приложения
-    debug: bool = os.getenv("DEBUG", "False").lower() == "true"
-    timezone: str = os.getenv("TIMEZONE", "Europe/Moscow")
-
-    # Network settings
-    telegram_timeout: int = int(os.getenv("TELEGRAM_TIMEOUT", "30"))
-    telegram_connect_timeout: int = int(os.getenv("TELEGRAM_CONNECT_TIMEOUT", "10"))
-
-    # Scheduler settings (добавляем эти поля)
-    scheduler_min_interval: int = int(os.getenv("SCHEDULER_MIN_INTERVAL", "10"))
-    scheduler_debug_interval: int = int(os.getenv("SCHEDULER_DEBUG_INTERVAL", "30"))
-
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
-        extra = "ignore"  # Игнорировать лишние поля
+    # Настройки загрузки конфигурации (Modern Pydantic v2 style)
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore"  # Игнорировать лишние переменные в .env
+    )
 
 # Создаем глобальный объект конфигурации
-settings = Settings()
-
-# Проверяем обязательные переменные
-def validate_config():
-    """Проверяет наличие обязательных переменных окружения"""
-    if not settings.telegram_bot_token:
-        raise ValueError("TELEGRAM_BOT_TOKEN не установлен!")
-    if not settings.telegram_bot_username:
-        print("⚠️  TELEGRAM_BOT_USERNAME не установлен, бот будет использовать username из getMe")
-
+# При создании Pydantic сам проверит наличие обязательных полей (telegram_bot_token)
+try:
+    settings = Settings()
     print("✅ Конфигурация загружена успешно")
+except Exception as e:
+    print("❌ Ошибка загрузки конфигурации. Проверьте файл .env или переменные окружения.")
+    print(f"Детали: {e}")
+    exit(1)

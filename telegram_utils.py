@@ -1,15 +1,17 @@
 """
 Утилиты для работы с Telegram API.
-Аналоги Java классов: TelegramMessageService и TelegramBotService (частично)
 """
 
-import logging
-from typing import Optional
-
-from telegram import Bot, InputFile
 from telegram.error import TelegramError, BadRequest, RetryAfter
 from telegram.request import HTTPXRequest
+import asyncio
+import logging
+from typing import Optional
+from telegram import Bot, error
+from telegram.constants import ParseMode
+from telegram.error import TimedOut, NetworkError
 
+from config import settings
 logger = logging.getLogger(__name__)
 
 
@@ -17,121 +19,117 @@ class TelegramBotError(Exception):
     """Кастомное исключение для ошибок Telegram бота"""
     pass
 
+async def create_bot() -> Bot:
+    """
+    Создает и настраивает экземпляр бота.
+    """
+    request = HTTPXRequest(
+        connection_pool_size=8,
+        connect_timeout=settings.tg_request_connect_timeout,
+        read_timeout=settings.tg_request_read_timeout,
+        write_timeout=settings.tg_request_write_timeout,
+        pool_timeout=settings.tg_request_pool_timeout
+    )
 
-async def send_text_message(bot: Bot, chat_id: int, text: str,
-                            parse_mode: Optional[str] = None) -> bool:
+    bot = Bot(token=settings.telegram_bot_token, request=request)
+
+    # Проверка соединения при старте
+    try:
+        me = await bot.get_me()
+        logger.info(f"🤖 Бот инициализирован: @{me.username} (ID: {me.id})")
+    except error.TelegramError as e:
+        logger.critical(f"❌ Ошибка авторизации бота. Проверьте токен! Детали: {e}")
+        raise e
+
+    return bot
+
+async def send_text(
+        bot: Bot,
+        chat_id: int,
+        text: str,
+        parse_mode: Optional[str] = None,
+        disable_preview: bool = True) -> bool:
     """
     Отправляет текстовое сообщение в указанный чат.
 
     Args:
-        bot: Экземпляр Telegram бота
-        chat_id: ID чата для отправки
-        text: Текст сообщения
-        parse_mode: Режим парсинга (Markdown, HTML и т.д.)
+    bot: Экземпляр Telegram бота
+    chat_id: ID чата для отправки
+    text: Текст сообщения
+    parse_mode: Режим парсинга (Markdown, HTML и т.д.)
 
     Returns:
-        True если сообщение отправлено успешно, False в случае ошибки
+    True если сообщение отправлено успешно, False в случае ошибки
 
-    Аналог Java метода: TelegramBotService.sendMessage()
     """
     try:
         await bot.send_message(
             chat_id=chat_id,
             text=text,
             parse_mode=parse_mode,
-            disable_web_page_preview=True
+            disable_web_page_preview=disable_preview
         )
         logger.debug(f"✅ Текстовое сообщение отправлено в чат {chat_id}: {text[:50]}...")
         return True
-
-    except TelegramError as e:
-        logger.error(f"❌ Ошибка отправки текста в чат {chat_id}: {e}")
+    except error.Forbidden:
+        logger.warning(f"🚫 Пользователь {chat_id} заблокировал бота")
         return False
-    except Exception as e:
-        logger.error(f"❌ Неожиданная ошибка при отправке текста в чат {chat_id}: {e}")
+    except error.TelegramError as e:
+        logger.error(f"❌ Ошибка отправки текста в {chat_id}: {e}")
         return False
 
-
-# telegram_utils.py - функция send_gif_message
-async def send_gif_message(bot: Bot, chat_id: int, file_id: str,
-                           caption: Optional[str] = None,
-                           max_retries: int = 3) -> bool:
+async def send_gif(
+        bot: Bot,
+        chat_id: int,
+        file_id: str,
+        caption: Optional[str] = None,
+        max_retries: int = 3) -> bool:
     """
-    Отправляет GIF (анимацию) в указанный чат с повторными попытками.
+    Отправляет GIF с механизмом повторных попыток (Retry).
     """
-    for attempt in range(max_retries):
+    for attempt in range(1, max_retries + 1):
         try:
             await bot.send_animation(
                 chat_id=chat_id,
                 animation=file_id,
                 caption=caption,
-                disable_notification=False,
-                write_timeout=30,
-                read_timeout=30,
-                connect_timeout=30
+                parse_mode=ParseMode.HTML,
+                write_timeout=settings.tg_request_write_timeout
             )
-            logger.debug(f"✅ GIF отправлен в чат {chat_id}: file_id={file_id[:20]}...")
+            logger.info(f"📤 GIF отправлен в {chat_id}")
             return True
 
-        except TimedOut:
-            if attempt < max_retries - 1:
-                wait_time = (attempt + 1) * 5
-                logger.warning(f"⏳ Таймаут при отправке GIF в чат {chat_id}, "
-                               f"попытка {attempt + 1}/{max_retries}, жду {wait_time} сек")
-                await asyncio.sleep(wait_time)
+        # --- Фатальные ошибки (не имеет смысла повторять) ---
+        except error.BadRequest as e:
+            if "chat not found" in str(e).lower():
+                logger.error(f"❌ Чат {chat_id} не существует")
             else:
-                logger.error(f"❌ Превышено максимальное количество попыток отправки GIF в чат {chat_id}")
-                return False
-
-        except RetryAfter as e:
-            wait_time = e.retry_after
-            logger.warning(f"⏳ Telegram просит подождать {wait_time} сек перед отправкой в чат {chat_id}")
-            await asyncio.sleep(wait_time)
-
-        except BadRequest as e:
-            # Проверяем разные типы ошибок BadRequest
-            error_msg = str(e).lower()
-            if "chat not found" in error_msg or "chat_id" in error_msg:
-                logger.error(f"❌ Чат {chat_id} не найден или недоступен")
-            else:
-                logger.error(f"❌ Ошибка запроса при отправке GIF в чат {chat_id}: {e}")
+                logger.error(f"❌ Ошибка запроса (BadRequest) для {chat_id}: {e}")
             return False
 
-        except NetworkError as e:
-            logger.error(f"❌ Сетевая ошибка при отправке GIF в чат {chat_id}: {e}")
-            if attempt < max_retries - 1:
-                await asyncio.sleep(5)
+        except error.Forbidden:
+            logger.warning(f"🚫 Бот заблокирован пользователем {chat_id}")
+            return False
+
+        # --- Временные ошибки (можно повторить) ---
+        except (error.TimedOut, error.NetworkError) as e:
+            logger.warning(f"⏳ Попытка {attempt}/{max_retries} не удалась (сеть): {e}")
+            if attempt < max_retries:
+                sleep_time = attempt * 2  # 2сек, 4сек, 6сек...
+                await asyncio.sleep(sleep_time)
             else:
-                return False
+                logger.error(f"❌ Не удалось отправить GIF в {chat_id} после {max_retries} попыток")
+
+        except error.RetryAfter as e:
+            logger.warning(f"🛑 Telegram Rate Limit. Ждем {e.retry_after} сек.")
+            await asyncio.sleep(e.retry_after)
+            # В данном случае можно попробовать еще раз на следующей итерации цикла
 
         except Exception as e:
-            logger.error(f"❌ Неожиданная ошибка при отправке GIF в чат {chat_id}: {e}")
+            logger.error(f"❌ Неизвестная ошибка при отправке GIF в {chat_id}: {e}")
             return False
 
     return False
-
-from telegram.error import TimedOut, NetworkError
-
-async def send_gif_with_retry(bot, chat_id, file_id, caption=None, max_retries=3):
-    for attempt in range(max_retries):
-        try:
-            await bot.send_animation(
-                chat_id=chat_id,
-                animation=file_id,
-                caption=caption,
-                write_timeout=30  # Можно переопределить для конкретного файла
-            )
-            return True
-        except (TimedOut, NetworkError) as e:
-            if attempt == max_retries - 1:
-                logger.error(f"Не удалось отправить GIF после {max_retries} попыток: {e}")
-                return False
-            wait_time = (attempt + 1) * 5  # Экспоненциальная задержка: 5, 10, 15...
-            logger.warning(f"Сетевая ошибка, повтор через {wait_time} сек...")
-            await asyncio.sleep(wait_time)
-        except Exception as e:
-            logger.error(f"Другая ошибка при отправке: {e}")
-            return False
 
 async def get_bot_info(bot: Bot) -> dict:
     """
@@ -172,7 +170,7 @@ async def send_markdown_message(bot: Bot, chat_id: int, markdown_text: str) -> b
     Returns:
         True если сообщение отправлено успешно, False в случае ошибки
     """
-    return await send_text_message(bot, chat_id, markdown_text, parse_mode='MarkdownV2')
+    return await send_text(bot, chat_id, markdown_text, ParseMode.MARKDOWN)
 
 
 async def send_html_message(bot: Bot, chat_id: int, html_text: str) -> bool:
@@ -187,7 +185,7 @@ async def send_html_message(bot: Bot, chat_id: int, html_text: str) -> bool:
     Returns:
         True если сообщение отправлено успешно, False в случае ошибки
     """
-    return await send_text_message(bot, chat_id, html_text, parse_mode='HTML')
+    return await send_text(bot, chat_id, html_text, ParseMode.HTML)
 
 
 def create_bot_instance(token: str, timeout: int = 30) -> Bot:
@@ -242,33 +240,3 @@ async def test_bot_connection(bot: Bot) -> bool:
     except Exception as e:
         logger.error(f"❌ Ошибка подключения бота: {e}")
         return False
-
-
-# Для обратной совместимости с кодом, который может ожидать синхронные функции
-class TelegramMessageService:
-    """
-    Сервис для отправки сообщений (синхронная обертка).
-    Аналог Java класса TelegramMessageService.
-    """
-
-    def __init__(self, bot: Bot):
-        self.bot = bot
-
-    async def send_text_message(self, chat_id: int, text: str) -> bool:
-        """Асинхронная отправка текстового сообщения"""
-        return await send_text_message(self.bot, chat_id, text)
-
-    async def send_gif_message(self, chat_id: int, file_id: str, caption: str = None) -> bool:
-        """Асинхронная отправка GIF"""
-        return await send_gif_message(self.bot, chat_id, file_id, caption)
-
-    async def send_markdown(self, chat_id: int, markdown_text: str) -> bool:
-        """Асинхронная отправка Markdown сообщения"""
-        return await send_markdown_message(self.bot, chat_id, markdown_text)
-
-    async def send_html(self, chat_id: int, html_text: str) -> bool:
-        """Асинхронная отправка HTML сообщения"""
-        return await send_html_message(self.bot, chat_id, html_text)
-
-
-import asyncio

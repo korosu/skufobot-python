@@ -11,7 +11,7 @@ from typing import Callable
 
 from config import settings
 from services import subscriber_service, gif_service
-from telegram_utils import send_text_message, send_gif_message
+from telegram_utils import send_text, send_gif
 from telegram.error import BadRequest
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,7 @@ class SimpleScheduler:
 
             for chat_id in chat_ids:
                 try:
-                    await send_text_message(self.bot, chat_id, message)
+                    await send_text(self.bot, chat_id, message)
                     sent_count += 1
                     logger.debug(f"📨 Сообщение отправлено в чат {chat_id}")
                 except Exception as e:
@@ -77,7 +77,6 @@ class SimpleScheduler:
             logger.info("🚀 Начинаю ежедневную GIF рассылку...")
 
             today = self._get_today_day_of_week()
-            day_name_genitive = self._get_day_name_genitive(today)  # Изменено на родительный падеж
             chat_ids = await subscriber_service.get_all_subscriber_ids()
 
             # Ищем случайный GIF для сегодняшнего дня
@@ -89,9 +88,9 @@ class SimpleScheduler:
             for chat_id in chat_ids:
                 try:
                     if gif:
-                        await send_gif_message(self.bot, chat_id, gif.file_id, f"Хорошего {day_name_genitive}! 😊")
+                        await send_gif(self.bot, chat_id, gif.file_id, self._get_daily_greeting(today))
                     else:
-                        await send_text_message(self.bot, chat_id, "😔 Гифки на сегодня закончились")
+                        await send_text(self.bot, chat_id, "😔 Гифки на сегодня закончились")
 
                     sent_count += 1
                     logger.debug(f"🎬 GIF отправлен в чат {chat_id}")
@@ -147,12 +146,12 @@ class SimpleScheduler:
 
             if gif:
                 timestamp = datetime.now().strftime("%H:%M:%S")
-                await send_gif_message(self.bot, chat_id, gif.file_id,
+                await send_gif(self.bot, chat_id, gif.file_id,
                                        f"[Тест] {day_name} - {timestamp}\n"
                                        f"Тест планировщика с интервалом 30 сек")
                 logger.debug(f"✅ Тестовая гифка отправлена в {chat_id} в {timestamp}")
             else:
-                await send_text_message(self.bot, chat_id,
+                await send_text(self.bot, chat_id,
                                         f"[Тест {day_name}] Нет гифок для этого дня\n"
                                         f"Время: {datetime.now().strftime('%H:%M:%S')}")
 
@@ -220,7 +219,7 @@ class SimpleScheduler:
             today = self._get_today_day_of_week()
             timestamp = datetime.now().strftime("%H:%M:%S")
 
-            await send_text_message(self.bot, chat_id,
+            await send_text(self.bot, chat_id,
                                     f"⏱️ Тест планировщика\n"
                                     f"Минутная проверка\n"
                                     f"Время: {timestamp}\n"
@@ -284,40 +283,30 @@ class SimpleScheduler:
             gif = await gif_service.find_random_gif_by_day(day)
 
             if gif:
-                await send_gif_message(self.bot, chat_id, gif.file_id, f"[Тест] {day_name}")
+                await send_gif(self.bot, chat_id, gif.file_id, f"[Тест] {day_name}")
                 logger.info(f"✅ Тестовый GIF отправлен в чат {chat_id} для дня {day}")
                 return True
             else:
-                await send_text_message(self.bot, chat_id, f"[Тест {day_name}] В базе нет гифок для этого дня")
+                await send_text(self.bot, chat_id, f"[Тест {day_name}] В базе нет гифок для этого дня")
                 logger.info(f"ℹ️ GIF для дня {day} не найден для чата {chat_id}")
                 return False
 
         except Exception as e:
             logger.error(f"❌ Ошибка отправки тестового GIF в чат {chat_id}: {e}")
-            await send_text_message(self.bot, chat_id, "❌ Произошла ошибка при отправке теста")
+            await send_text(self.bot, chat_id, "❌ Произошла ошибка при отправке теста")
             return False
 
-    def _get_day_name_genitive(self, day_num: int) -> str:
-        """
-        Возвращает название дня недели в родительном падеже
-        (для фраз типа "Хорошего понедельника!")
-
-        Args:
-            day_num: номер дня недели (0-6)
-
-        Returns:
-            str: день недели в родительном падеже
-        """
-        day_names_genitive = {
-            0: "понедельника",
-            1: "вторника",
-            2: "среды",
-            3: "четверга",
-            4: "пятницы",
-            5: "субботы",
-            6: "воскресенья"
+    def _get_daily_greeting(self, day_num: int) -> str:
+        greetings = {
+            1: "Хорошего понедельника! 🚀",
+            2: "Хорошего вторника! 💪",
+            3: "Хорошей среды! ☕️",
+            4: "Хорошего четверга! 📈",
+            5: "Хорошей пятницы! 🎉",
+            6: "Хорошей субботы! 🌳",
+            7: "Хорошего воскресенья! 😊"
         }
-        return day_names_genitive.get(day_num, "дня")
+        return greetings.get(day_num, "Хорошего дня! 😊")
 
     def add_custom_task(self, interval_seconds: int, callback):
         """Добавляет пользовательскую задачу с заданным интервалом"""

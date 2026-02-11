@@ -1,5 +1,5 @@
 # Используем официальный Python образ
-FROM python:3.10-slim
+FROM python:3.11-slim
 
 # Устанавливаем системные зависимости для PostgreSQL
 RUN apt-get update && apt-get install -y \
@@ -15,6 +15,9 @@ COPY requirements.txt .
 
 # Устанавливаем Python зависимости
 RUN pip install --no-cache-dir -r requirements.txt
+
+#hot reload for dev
+RUN pip install watchdog
 
 # Создаем папку для логов
 RUN mkdir -p /app/logs
