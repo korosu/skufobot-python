@@ -6,9 +6,10 @@
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
-from config import settings
 
 import pytz
+
+TIMEZONE = pytz.timezone("Europe/Moscow")
 
 @dataclass
 class ChatSubscriber:
@@ -22,7 +23,7 @@ class ChatSubscriber:
     def __post_init__(self):
         """Инициализация после создания объекта"""
         if self.registered_at is None:
-            self.registered_at = datetime.now(pytz.timezone(settings.timezone_moscow))
+            self.registered_at = datetime.now(TIMEZONE)
 
 
 @dataclass

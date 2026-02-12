@@ -10,49 +10,6 @@ from models import ChatSubscriber, SkufGif
 
 logger = logging.getLogger(__name__)
 
-
-# class DatabaseConnection:
-#     """Управление подключением к базе данных"""
-#
-#     def __init__(self):
-#         self._pool: Optional[asyncpg.Pool] = None
-#
-#     async def connect(self):
-#         """Создание пула подключений к PostgreSQL"""
-#         try:
-#             self._pool = await asyncpg.create_pool(
-#                 host=settings.postgres_host,
-#                 port=settings.postgres_port,
-#                 user=settings.postgres_user,
-#                 password=settings.postgres_password,
-#                 database=settings.postgres_db,
-#                 min_size=5,
-#                 max_size=20,
-#                 command_timeout=60
-#             )
-#             logger.info("✅ Подключение к базе данных установлено")
-#         except Exception as e:
-#             logger.error(f"❌ Ошибка подключения к базе данных: {e}")
-#             raise
-#
-#     async def disconnect(self):
-#         """Закрытие пула подключений"""
-#         if self._pool:
-#             await self._pool.close()
-#             logger.info("📤 Отключение от базы данных")
-#
-#     @asynccontextmanager
-#     async def session(self):
-#         """
-#         Контекстный менеджер для получения подключения из пула.
-#         Автоматически управляет жизненным циклом подключения.
-#         """
-#         if not self._pool:
-#             await self.connect()
-#
-#         async with self._pool.acquire() as connection:
-#             yield connection
-
 class ChatRepository:
     """Репозиторий для работы с подписчиками"""
 
@@ -161,13 +118,7 @@ class GifRepository:
                 )
 
                 if row:
-                    return SkufGif(
-                        #id=row['id'],
-                        #file_id=row['file_id'],
-                        #description=row['description'],
-                        #day_of_week=row['day_of_week']
-                        **row
-                    )
+                    return SkufGif(**row)
                 return None
 
             except Exception as e:
@@ -196,13 +147,7 @@ class GifRepository:
                 )
 
                 if row:
-                    return SkufGif(
-                        #id=row['id'],
-                        #file_id=row['file_id'],
-                        #description=row['description'],
-                        #day_of_week=row['day_of_week']
-                        **row
-                    )
+                    return SkufGif(**row)
                 return None
 
             except Exception as e:

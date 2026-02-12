@@ -95,9 +95,8 @@ class SkufBot:
         app.add_handler(CommandHandler("status", self.handle_status))
         app.add_handler(CommandHandler("help", self.handle_help))
 
-        if settings.debug:
-            app.add_handler(CommandHandler("testschedule", self.handle_test_schedule))
-            app.add_handler(CommandHandler("stoptestschedule", self.handle_stop_test_schedule))
+        #if settings.debug:
+            #do
 
         # Команды для дней недели (загрузка GIF)
         day_commands = {
@@ -258,58 +257,6 @@ class SkufBot:
         ✅ GIF сохранен для понедельника
         """
         await send_text(self.application.bot, chat_id, help_text)
-
-    async def handle_test_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /testschedule - тестирование планировщика"""
-        chat_id = update.effective_chat.id
-
-        try:
-            # Добавляем тестовую задачу с интервалом 10 секунд
-            async def test_task():
-                timestamp = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-                await send_text(self.application.bot, chat_id,
-                                        f"⏱️ Тестовая задача планировщика\n"
-                                        f"Время: {timestamp}\n"
-                                        f"ID чата: {chat_id}")
-
-            self.scheduler.add_custom_task(10, test_task)
-
-            await send_text(self.application.bot, chat_id,
-                                    f"✅ Добавлена тестовая задача!\n"
-                                    f"• Интервал: 10 секунд\n"
-                                    f"• Чат: {chat_id}\n"
-                                    f"• Задача будет выполняться в фоне\n"
-                                    f"Используйте /stoptestschedule для остановки")
-
-            logger.info(f"✅ Добавлена тестовая задача для чата {chat_id} с интервалом 10 сек")
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка /testschedule для чата {chat_id}: {e}")
-            await send_text(self.application.bot, chat_id,
-                                    "❌ Произошла ошибка при добавлении тестовой задачи")
-
-    async def handle_stop_test_schedule(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Обработчик команды /stoptestschedule - остановка тестовых задач"""
-        chat_id = update.effective_chat.id
-
-        try:
-            # Очищаем все задачи планировщика
-            import aioschedule as schedule
-            schedule.clear()
-
-            # Перезапускаем планировщик
-            await self.scheduler.start()
-
-            await send_text(self.application.bot, chat_id,
-                                    "🛑 Все тестовые задачи остановлены\n"
-                                    "✅ Планировщик перезапущен")
-
-            logger.info(f"🛑 Тестовые задачи остановлены для чата {chat_id}")
-
-        except Exception as e:
-            logger.error(f"❌ Ошибка /stoptestschedule для чата {chat_id}: {e}")
-            await send_text(self.application.bot, chat_id,
-                                    "❌ Произошла ошибка при остановке тестовых задач")
 
     async def handle_unknown(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.effective_chat.id
