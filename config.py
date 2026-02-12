@@ -13,12 +13,18 @@ class Settings(BaseSettings):
     telegram_bot_token: str
     telegram_bot_username: Optional[str] = None
 
+    # --- Special Username ---
+    telegram_s_username:  Optional[str] = None
+    telegram_b_username:  Optional[str] = None
+    telegram_a_username:  Optional[str] = None
+    telegram_y_username:  Optional[str] = None
+
     # --- Database ---
-    postgres_user: str = "postgres"
-    postgres_password: str = "postgres"
-    postgres_db: str = "skufobot_db"
-    postgres_host: str = "db"  # Хост 'db' для Docker compose, для локалки можно 'localhost'
-    postgres_port: int = 5432
+    postgres_user: str
+    postgres_password: str
+    postgres_db: str
+    postgres_host: str
+    postgres_port: int
 
     # --- Timeouts & Polling (Float для точности) ---
     tg_request_connect_timeout: float = 30.0

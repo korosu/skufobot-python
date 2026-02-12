@@ -4,7 +4,6 @@
 
 import logging
 import asyncio
-from datetime import datetime
 from typing import Dict, Optional
 from telegram import Update
 from telegram.ext import (
@@ -24,6 +23,16 @@ from scheduler import SimpleScheduler
 
 logger = logging.getLogger(__name__)
 
+# --- Настройки персонализации ---
+# Формат: "username_без_собаки": "Текст ответа"
+PERSONAL_RESPONSES = {
+    settings.telegram_a_username: "Соси, пидор",
+    settings.telegram_b_username: "Не паникуй",
+    settings.telegram_s_username: "БОСС!?",
+    settings.telegram_y_username: "Не заебывай",
+}
+
+DEFAULT_MENTION_RESPONSE = "Чего шумишь? Я работаю. 🍺"
 
 class SkufBot:
     """Основной класс Telegram бота"""
@@ -40,20 +49,22 @@ class SkufBot:
             # Инициализация
             logger.info("🤖 Инициализация SkufBot...")
 
-            # 👇 2. открываем постоянное соединение для работы бота
+            # 1. Подключение к БД
             await db.connect()
             logger.info("✅ Подключение к базе данных установлено")
 
-            # 3. Создаем приложение Telegram
+            # 2. Создаем приложение Telegram
             self.application = Application.builder().token(settings.telegram_bot_token).build()
-            logger.info("✅ Приложение Telegram создано")
 
-            # 4. Создаем и запускаем планировщик
+            # Получаем информацию о боте, чтобы знать свой username для фильтрации упоминаний
+            logger.info(f"✅ Приложение Telegram создано (@{settings.telegram_bot_username})")
+
+            # 3. Создаем и запускаем планировщик
             self.scheduler = SimpleScheduler(self.application.bot)
             await self.scheduler.start()
             logger.info("✅ Планировщик задач запущен")
 
-            # 5. Регистрируем обработчики
+            # 4. Регистрируем обработчики
             self._register_handlers()
             logger.info("✅ Обработчики команд зарегистрированы")
 
@@ -99,20 +110,29 @@ class SkufBot:
             #do
 
         # Команды для дней недели (загрузка GIF)
-        day_commands = {
-            "monday": 1, "mon": 1, "1": 1,
-            "tuesday": 2, "tue": 2, "2": 2,
-            "wednesday": 3, "wed": 3, "3": 3,
-            "thursday": 4, "thu": 4, "4": 4,
-            "friday": 5, "fri": 5, "5": 5,
-            "saturday": 6, "sat": 6, "6": 6,
-            "sunday": 7, "sun": 7, "7": 7,
+        day_map = {
+            1: ["monday", "mon", "1"],
+            2: ["tuesday", "tue", "2"],
+            3: ["wednesday", "wed", "3"],
+            4: ["thursday", "thu", "4"],
+            5: ["friday", "fri", "5"],
+            6: ["saturday", "sat", "6"],
+            7: ["sunday", "sun", "7"]
         }
 
-        for command, day in day_commands.items():
-            async def day_handler(update: Update, context: ContextTypes.DEFAULT_TYPE, day=day):
-                await self.handle_day_command(update, day)
-            app.add_handler(CommandHandler(command, day_handler))
+        for day_num, commands in day_map.items():
+            # Создаем замыкание (closure), чтобы сохранить day_num
+            async def wrapper(update, context, d=day_num):
+                await self.handle_day_command(update, d)
+
+            app.add_handler(CommandHandler(commands, wrapper))
+
+        # --- Обработчик упоминаний (@botname) ---
+        # Фильтр: Это упоминание (Entity("mention")) И текст содержит username бота
+        mention_filter = filters.Entity("mention") & filters.Regex(f"(?i)@{settings.telegram_bot_username}")
+        app.add_handler(MessageHandler(mention_filter, self.handle_mention))
+
+        mention = filters.Entity("mention") & filters.Regex(f"(?i)@{settings.telegram_bot_username}")
 
         # Обработчик GIF (анимаций)
         app.add_handler(MessageHandler(filters.ANIMATION, self.handle_gif))
@@ -132,6 +152,25 @@ class SkufBot:
         except Exception as e:
             logger.error(f"❌ Ошибка /start для чата {chat_id}: {e}")
             await send_text(self.application.bot, chat_id, "❌ Произошла ошибка при регистрации")
+
+    async def handle_mention(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """
+        Обрабатывает упоминания бота.
+        Выбирает ответ в зависимости от username пользователя.
+        """
+        user = update.effective_user
+        chat_id = update.effective_chat.id
+
+        # Получаем username (без @) или пустую строку
+        username = user.username if user.username else "" #@{username}
+
+        logger.info(f"🔔 Упоминание от @secret (id: {user.id})")
+
+        # Ищем персональный ответ, иначе берем стандартный
+        response = PERSONAL_RESPONSES.get(username, DEFAULT_MENTION_RESPONSE)
+
+        # Отправляем ответ как reply (ответ на сообщение)
+        await update.message.reply_text(response)
 
     async def handle_test(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /test"""
@@ -293,7 +332,7 @@ class SkufBot:
 
         # 2. Останавливаем планировщик
         if self.scheduler:
-            self.scheduler.stop()
+            await self.scheduler.stop()
             logger.info("✅ Планировщик остановлен")
 
         # 3. Отключаемся от базы данных
