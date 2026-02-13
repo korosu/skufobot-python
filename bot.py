@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # Формат: "username_без_собаки": "Текст ответа"
 PERSONAL_RESPONSES = {
     settings.telegram_a_username: "Соси, пидор",
-    settings.telegram_b_username: "Не паникуй",
+    settings.telegram_b_username: "На 🍺",
     settings.telegram_s_username: "БОСС!?",
     settings.telegram_y_username: "Не заебывай",
 }
@@ -105,6 +105,7 @@ class SkufBot:
         app.add_handler(CommandHandler("stop", self.handle_stop))
         app.add_handler(CommandHandler("status", self.handle_status))
         app.add_handler(CommandHandler("help", self.handle_help))
+        app.add_handler(CommandHandler("unsubscribe", self.handle_unsubscribe))
 
         #if settings.debug:
             #do
@@ -151,6 +152,19 @@ class SkufBot:
             await send_text(self.application.bot, chat_id, message)
         except Exception as e:
             logger.error(f"❌ Ошибка /start для чата {chat_id}: {e}")
+            await send_text(self.application.bot, chat_id, "❌ Произошла ошибка при регистрации")
+
+    async def handle_unsubscribe(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды /unsubscribe"""
+        chat_id = update.effective_chat.id
+        try:
+            is_new = await subscriber_service.unsubscribe(chat_id)
+            message = "Прощайте! Чат отписан." if is_new else "ℹ️ Чат не существует."
+            if is_new:
+                logger.info(f"✅ Чат отписан: {chat_id}")
+            await send_text(self.application.bot, chat_id, message)
+        except Exception as e:
+            logger.error(f"❌ Ошибка /unsubscribe для чата {chat_id}: {e}")
             await send_text(self.application.bot, chat_id, "❌ Произошла ошибка при регистрации")
 
     async def handle_mention(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -269,6 +283,7 @@ class SkufBot:
         /start - Зарегистрировать чат
         /status - Статус бота и статистика
         /help - Эта справка
+        /unsubscribe - Отписать чат
         
         *Тестирование:*
         /test <1-7> - Отправить тестовый GIF для указанного дня
