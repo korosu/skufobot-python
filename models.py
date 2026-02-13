@@ -19,6 +19,7 @@ class ChatSubscriber:
     """
     chat_id: int
     registered_at: Optional[datetime] = None
+    is_admin: bool = False
 
     def __post_init__(self):
         """Инициализация после создания объекта"""

@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     telegram_a_username:  Optional[str] = None
     telegram_y_username:  Optional[str] = None
 
+    # --- Security ---
+    admin_password: str
+
     # --- Database ---
     postgres_user: str
     postgres_password: str

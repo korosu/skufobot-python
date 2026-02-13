@@ -37,6 +37,14 @@ class SubscriberService:
         """Проверяет статус подписки"""
         return await self.repo.exists_by_id(chat_id)
 
+    async def make_admin(self, chat_id: int) -> bool:
+        """Выдает права на загрузку контента"""
+        return await self.repo.make_admin(chat_id)
+
+    async def is_admin(self, chat_id: int) -> bool:
+        """Проверяет права на загрузку контента"""
+        return await self.repo.is_admin(chat_id)
+
 
 class GifService:
     """Сервис для работы с GIF"""

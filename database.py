@@ -34,6 +34,9 @@ class Database:
                 command_timeout=60
             )
             logger.info("✅ Успешное подключение к БД")
+
+            # --- Poor man's migrations ---
+            #await self._run_migrations()
         except Exception as e:
             logger.critical(f"❌ Ошибка подключения к БД: {e}")
             raise e
@@ -43,6 +46,16 @@ class Database:
         if self._pool:
             await self._pool.close()
             logger.info("💤 Пул подключений закрыт")
+
+    async def _run_migrations(self):
+        """Добавляет недостающие колонки автоматически"""
+        async with self.session() as conn:
+            logger.info("🛠 Проверка структуры таблиц...")
+            await conn.execute("""
+                ALTER TABLE chat_subscriber 
+                ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;
+            """)
+            logger.info("✅ Структура базы данных актуальна")
 
     @asynccontextmanager
     async def session(self):

@@ -15,6 +15,8 @@ CREATE TABLE IF NOT EXISTS skuf_gif (
     day_of_week INTEGER
 );
 
+ALTER TABLE chat_subscriber ADD COLUMN is_admin BOOLEAN DEFAULT FALSE;
+
 -- Индексы для производительности
 CREATE INDEX IF NOT EXISTS idx_gif_day ON skuf_gif(day_of_week);
 CREATE INDEX IF NOT EXISTS idx_gif_file_id ON skuf_gif(file_id);

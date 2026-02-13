@@ -106,6 +106,7 @@ class SkufBot:
         app.add_handler(CommandHandler("status", self.handle_status))
         app.add_handler(CommandHandler("help", self.handle_help))
         app.add_handler(CommandHandler("unsubscribe", self.handle_unsubscribe))
+        app.add_handler(CommandHandler("auth", self.handle_auth))
 
         #if settings.debug:
             #do
@@ -211,6 +212,15 @@ class SkufBot:
         """Обработчик команд дней недели"""
         chat_id = update.effective_chat.id
         try:
+            # --- ПРОВЕРКА ПРАВ ---
+            is_admin = await subscriber_service.is_admin(chat_id)
+            if not is_admin:
+                await send_text(
+                    self.application.bot,
+                    chat_id,
+                    "❌ У вас нет прав для загрузки GIF. Введите команду `/auth пароль`",
+                )
+                return
             self.upload_modes[chat_id] = day
             day_names = {1: "Понедельник", 2: "Вторник", 3: "Среда", 4: "Четверг", 5: "Пятница", 6: "Суббота", 7: "Воскресенье"}
             day_name = day_names.get(day, f"День {day}")
@@ -272,6 +282,38 @@ class SkufBot:
         except Exception as e:
             logger.error(f"❌ Ошибка /status для чата {chat_id}: {e}")
             await send_text(self.application.bot, chat_id, "❌ Произошла ошибка при получении статуса")
+
+    async def handle_auth(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Обработчик команды авторизации: /auth <пароль>"""
+        chat_id = update.effective_chat.id
+
+        # Проверяем, передал ли пользователь пароль
+        if not context.args:
+            await send_text(self.application.bot, chat_id, "❌ Использование: `/auth ваш_пароль`")
+            return
+
+        password = context.args[0]
+
+        if password == settings.admin_password:
+            # Сначала убедимся, что юзер вообще есть в БД (подписан)
+            await subscriber_service.subscribe(chat_id)
+
+            # Выдаем права
+            await subscriber_service.make_admin(chat_id)
+
+            # Можно попытаться удалить сообщение с паролем для безопасности (работает только если бот админ в группе или это ЛС)
+            try:
+                await update.message.delete()
+                logger.info("Бот удалил сообщение с паролем!")
+            except Exception:
+                logger.info("Бот не смог удалить сообщение с паролем!")
+                pass
+
+            await send_text(self.application.bot, chat_id, "✅ Пароль верный! Теперь вы можете загружать GIF.")
+            logger.info(f"Выданы административные права пользователю: {chat_id}")
+        else:
+            await send_text(self.application.bot, chat_id, "❌ Неверный пароль.")
+            logger.info(f"Не были выданы административные права пользователю: {chat_id}")
 
     async def handle_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Обработчик команды /help"""
@@ -353,3 +395,7 @@ class SkufBot:
         # 3. Отключаемся от базы данных
         await db.disconnect()
         logger.info("✅ Отключение от базы данных")
+
+    @property
+    def stop_event(self):
+        return self._stop_event

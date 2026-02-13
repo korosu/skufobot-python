@@ -93,6 +93,34 @@ class ChatRepository:
                 logger.error(f"❌ Ошибка при удалении чата {chat_id}: {e}")
                 return False
 
+    async def make_admin(self, chat_id: int) -> bool:
+        """Выдает права администратора (на загрузку GIF)"""
+        async with self.db.session() as conn:
+            try:
+                result = await conn.execute(
+                    "UPDATE chat_subscriber SET is_admin = TRUE WHERE chat_id = $1",
+                    chat_id
+                )
+                success = result.split()[-1] == '1'
+                if success:
+                    logger.info(f"🔑 Пользователь {chat_id} получил права администратора")
+                return success
+            except Exception as e:
+                logger.error(f"❌ Ошибка при выдаче прав чату {chat_id}: {e}")
+                return False
+
+    async def is_admin(self, chat_id: int) -> bool:
+        """Проверяет, есть ли у чата права администратора"""
+        async with self.db.session() as conn:
+            try:
+                val = await conn.fetchval(
+                    "SELECT is_admin FROM chat_subscriber WHERE chat_id = $1",
+                    chat_id
+                )
+                return bool(val)  # Вернет False, если val = None или False
+            except Exception as e:
+                logger.error(f"❌ Ошибка при проверке прав чата {chat_id}: {e}")
+                return False
 
 class GifRepository:
     """Репозиторий для работы с GIF"""
