@@ -36,7 +36,7 @@ class Database:
             logger.info("✅ Успешное подключение к БД")
 
             # --- Poor man's migrations ---
-            #await self._run_migrations()
+            await self._run_migrations()
         except Exception as e:
             logger.critical(f"❌ Ошибка подключения к БД: {e}")
             raise e
